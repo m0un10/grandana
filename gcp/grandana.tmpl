@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+CONFIG_DIR=`realpath $SCRIPT_DIR`
+
+_ENV_NAME=${2:-"dev"}
+_COMPONENT=${3:-""}
+
+COMPONENT_DIR=stages
+CHANGES="true"
+
+function run() {
+    cd $COMPONENT_DIR/$1
+    ./{{ .Name }} $TYPE $_ENV_NAME
+    if terraform show apply.plan | grep 'No changes.'; then 
+        CHANGES="false"
+    fi
+    cd ../..
+}
+
+function process() {
+    if [ ! -d $COMPONENT_DIR ]; then
+        echo "skipping $TYPE due to missing $COMPONENT_DIR"
+        exit 0
+    fi
+    ORIGINAL_DIR=`pwd`
+    if [ "$_COMPONENT" != ""  ]; then
+        run $_COMPONENT
+        return
+    fi
+    for d in $COMPONENT_DIR/*/ ; do
+        NAME=`basename -- $d`
+        if [ ! -f $COMPONENT_DIR/$NAME/{{ .Name }} ]; then
+            continue
+        fi
+        echo "Running $TYPE for $NAME"
+        run $NAME
+    done
+    cd $ORIGINAL_DIR
+}
+
+function plan() {
+    export TYPE="plan"
+    process
+    echo "::set-output name=has_changes::${CHANGES}"
+}
+
+function apply() {
+    export TYPE="apply"
+    process
+}
+
+function sops_encrypt(){
+    if [[ -f $CONFIG_DIR/sops/$1.json ]]; then
+        sops --encrypt $CONFIG_DIR/sops/$1.json > $CONFIG_DIR/sops/$1.enc.json
+    fi
+}
+
+function sops_decrypt(){
+    if [[ -f $CONFIG_DIR/sops/$1.enc.json ]]; then
+        sops --decrypt $CONFIG_DIR/sops/$1.enc.json > $CONFIG_DIR/sops/$1.json
+    fi
+}
+
+function encrypt_sops(){
+	sops_encrypt base
+    sops_encrypt $_ENV_NAME
+}
+
+function decrypt_sops(){
+    sops_decrypt base
+    sops_decrypt $_ENV_NAME
+    echo "secrets written to $CONFIG_DIR/unencrypted"
+    echo "edit your files here then run '{{ .Name }} sops::encrypt'"
+}
+
+function help() {
+    echo -e "
+Usage: $0 <command> <env> [<component>]
+
+If no <component> specified it will apply across all components
+
+Commands:
+  plan             Run a plan on the component
+  apply            Apply the component
+  help             Prints this message
+Secret commands:
+  sops::encrypt         Encrypt environment secrets (if authorised)
+  sops::decrypt         Decrypt environment secrets (if authorised)"
+}
+
+case ${1:-"help"} in
+    plan)
+        plan;;
+    apply)
+        apply;;
+    post)
+        post;;
+    sops::encrypt)
+        encrypt_sops;;
+    sops::decrypt)
+        decrypt_sops;;
+    *) help;;
+esac

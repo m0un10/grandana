@@ -1,0 +1,13 @@
+.DS_Store
+.terraform*
+*.plan
+kubeconfig*
+*.tfstate
+*.iml
+.idea
+*xml
+*tfstate*
+unencrypted
+
+sops/*
+!sops/*.enc.json

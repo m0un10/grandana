@@ -1,0 +1,52 @@
+#!/bin/bash
+set -euo pipefail
+
+_ENV_NAME=${2:-"dev"}
+
+_TFVAR_BASE_FILE=../../vars/base.tfvars
+_TFVAR_FILE=../../vars/$_ENV_NAME.tfvars
+
+_APPLY_PLAN_FILE=apply.plan
+
+function help() {
+    echo -e "
+Usage: $0 <command> <env>
+
+Commands:
+  plan\t\t Plan the provisioning and output to the plan file at \`$_APPLY_PLAN_FILE\`
+  apply\t\t Apply the plan file located at \`$_APPLY_PLAN_FILE\`
+  help\t\t Prints this message"
+}
+
+function plan() {
+    terraform init
+    terraform plan -out $_APPLY_PLAN_FILE -var-file=$_TFVAR_BASE_FILE --var-file=$_TFVAR_FILE
+}
+
+function apply() {
+    terraform apply --auto-approve $_APPLY_PLAN_FILE
+}
+
+function destroy() {
+    terraform destroy -var-file=$_TFVAR_BASE_FILE --var-file=$_TFVAR_FILE
+}
+
+function interactive_apply() {
+    plan
+    while true; do
+        read -p "Do you wish to apply this terraform plan? " yn
+        case $yn in
+            [Yy]* ) apply; break;;
+            [Nn]* ) exit;;
+            * ) echo "Please answer \"y\" or \"n\".";;
+        esac
+    done
+}
+
+case ${1:-"help"} in
+    plan) plan;;
+    apply) apply;;
+    destroy) destroy;;
+    interactive) interactive_apply;;
+    *) help;;
+esac
