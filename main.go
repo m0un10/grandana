@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -32,11 +31,12 @@ var (
 		"main.go",
 		".gitignore",
 	}
+	sourceRoot = filepath.Join(".", targetPlatform)
 )
 
 func processTemplate(sourceFile, destinationFile string) error {
 	t := template.Must(template.ParseFiles(sourceFile))
-	f, err := os.Create(strings.TrimSuffix(destinationFile, templateSuffix))
+	f, err := os.Create(destinationFile)
 	if err != nil {
 		return err
 	}
@@ -44,6 +44,7 @@ func processTemplate(sourceFile, destinationFile string) error {
 	if err != nil {
 		return err
 	}
+	log.Println(destinationFile)
 	return f.Close()
 }
 
@@ -53,29 +54,28 @@ func processFile(sourceInfo os.FileInfo, sourceFile, destinationFile string) err
 	}
 	destinationFile = strings.ReplaceAll(destinationFile, application, variables.Name)
 	for _, ignoreFile := range ignoreList {
-		if ignoreFile == sourceFile {
-			log.Println("ignore " + ignoreFile)
+		if strings.Contains(sourceFile, ignoreFile) {
+			log.Println("ignoring " + ignoreFile)
+			return nil
 		}
 	}
 	input, err := ioutil.ReadFile(sourceFile)
 	if err != nil {
 		return err
 	}
-	fmt.Println("." + destinationFile)
 	err = os.MkdirAll(path.Dir(destinationFile), 0755)
 	if err != nil {
 		return err
 	}
 	if strings.HasSuffix(sourceFile, templateSuffix) {
-		return processTemplate(sourceFile, destinationFile)
-	} else {
-		return ioutil.WriteFile(destinationFile, input, 0644)
+		return processTemplate(sourceFile, strings.TrimSuffix(destinationFile, templateSuffix))
 	}
+	log.Println(destinationFile)
+	return ioutil.WriteFile(destinationFile, input, 0644)
 }
 
 func main() {
 	targetDirectory := "output"
-	fmt.Println(os.Args)
 	if len(os.Args) > 1 {
 		targetDirectory = os.Args[1]
 		if len(os.Args) > 2 {
@@ -85,14 +85,13 @@ func main() {
 			targetPlatform = os.Args[3]
 		}
 	}
-	sourceRoot := filepath.Join(".", targetPlatform)
 	err := filepath.Walk(sourceRoot,
 		func(sourcePath string, sourceInfo os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-			targetFile := filepath.Join(targetDirectory, sourcePath)
-			return processFile(sourceInfo, sourcePath, targetFile)
+			destinationFile := filepath.Join(targetDirectory, strings.TrimPrefix(sourcePath, sourceRoot))
+			return processFile(sourceInfo, sourcePath, destinationFile)
 		})
 	if err != nil {
 		log.Println(err)
